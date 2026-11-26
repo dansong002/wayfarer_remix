@@ -1,6 +1,7 @@
 """Opens the app window and gives the UI its Python API through pywebview's bridge. There is no web server of ours."""
 
 import base64
+import json
 import sys
 import threading
 import webbrowser
@@ -9,7 +10,7 @@ from pathlib import Path
 import webview
 
 from wayfarer import export, update_check
-from wayfarer.storage import DATA_FOLDER, TripNameError, TripStore, data_dir, is_writable, slugify
+from wayfarer.storage import DATA_FOLDER, TripNameError, TripStore, _write_atomic, data_dir, is_writable, slugify
 
 UI_INDEX = Path(__file__).parent / "ui" / "index.html"
 # Window and taskbar icon. Windows reads .ico; Linux reads .png. macOS uses the app bundle's icon.
@@ -19,6 +20,9 @@ FILE_TYPES = {
     "png": "PNG image (*.png)",
     "pdf": "PDF document (*.pdf)",
 }
+SETTINGS_FILE = "settings.json"
+# The settings the UI may store, and their allowed values. Anything else is ignored.
+SETTINGS = {"theme": {"auto", "calm", "ink", "gem", "signal", "shelf"}}
 MOVE_ADVICE = f"Wayfarer can't write to its {DATA_FOLDER} folder. Move Wayfarer to a folder you can change, then open it again."
 
 
@@ -106,6 +110,30 @@ class Api:
         except (OSError, ValueError) as e:
             return {"ok": False, "error": f"The trip was not deleted: {e}"}
 
+    # Settings -------------------------------------------------------------------------
+
+    def get_settings(self) -> dict:
+        """Return the saved settings. A missing or damaged settings file gives the defaults."""
+        try:
+            data = json.loads((self._root / SETTINGS_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {k: v for k, v in data.items() if k in SETTINGS and v in SETTINGS[k]}
+
+    def set_settings(self, settings) -> dict:
+        if not isinstance(settings, dict):
+            return {"ok": False, "error": "Settings must be an object"}
+        merged = self.get_settings()
+        merged.update({k: v for k, v in settings.items() if k in SETTINGS and v in SETTINGS[k]})
+        try:
+            self._root.mkdir(parents=True, exist_ok=True)
+            _write_atomic(self._root / SETTINGS_FILE, json.dumps(merged, indent=2))
+        except OSError:
+            return {"ok": False, "error": f"The setting was not saved. {MOVE_ADVICE}"}
+        return {"ok": True}
+
     # Exports. Nothing is written until the user confirms a location in the Save dialog -----
 
     def build_text(self, trip) -> str:
@@ -147,13 +175,13 @@ def main() -> None:
     root = data_dir()
     api = Api(root=root)
     window = webview.create_window(
-        "Wayfarer",
+        "Wayfarer Remix",
         url=str(UI_INDEX),
         js_api=api,
         width=1300,
         height=840,
         min_size=(960, 640),
-        background_color="#141415",
+        background_color="#121212",
     )
     api._attach(window)
     # Keep the web view's working files with the app's data too. Without a path, Windows puts them in the temp folder.

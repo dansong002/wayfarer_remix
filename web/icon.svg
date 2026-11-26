@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Wayfarer Remix phone icon, in the Calm theme: the route from the original icon, ending at a violet gem.
+       Full bleed, with the drawing inside the middle 80%, so phones can crop it to any shape. -->
+  <rect width="1024" height="1024" fill="#121212"/>
+  <path d="M330 330 H578 A96 96 0 0 1 578 522 H446 A96 96 0 0 0 446 714 H660" fill="none" stroke="#f2f0ec" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="330" cy="330" r="68" fill="#f2f0ec"/>
+  <rect x="660" y="640" width="148" height="148" rx="18" fill="#b9a6ff" transform="rotate(45 734 714)"/>
+</svg>

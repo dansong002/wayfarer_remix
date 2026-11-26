@@ -8,7 +8,7 @@ import urllib.request
 from wayfarer._version import __version__
 
 APP_NAME = "Wayfarer"
-REPO = "TariqMK/Wayfarer"
+REPO = "dansong002/wayfarer_remix"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_URL = f"https://github.com/{REPO}/releases"
 TIMEOUT_SECONDS = 10

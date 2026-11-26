@@ -1,3 +1,41 @@
+# Wayfarer Remix
+
+**This is a modified version of [Wayfarer](https://github.com/TariqMK/Wayfarer) by TariqMK**, changed by dansong002 in November 2026. It is licensed under the GNU GPL v3, like the original. See [LICENSE](LICENSE).
+
+Changes in this version:
+- A phone and web version that installs to the home screen and works offline. See [Use it on your phone](#use-it-on-your-phone).
+- Five switchable themes from Daniel's Style Suite (Calm, Quiet Ink, Night Gem, Signal and Shelf), for the app and for exported posters.
+- New fonts (Inter, Space Grotesk, Doto and JetBrains Mono, all under the SIL Open Font License) and a new phone icon.
+- The desktop app's update check looks at this repository.
+
+The rest of this README is the original Wayfarer documentation, updated where the remix differs.
+
+## Use it on your phone
+
+The phone version is published to GitHub Pages from the `main` branch: `https://dansong002.github.io/wayfarer_remix/`.
+
+1. Open the link in Safari (iPhone) or Chrome (Android).
+2. Add it to the home screen:
+   - iPhone: select **Share**, then **Add to Home Screen**.
+   - Android: select the menu, then **Install app** or **Add to Home screen**.
+3. Open Wayfarer from the home screen. After the first open, it works without a connection.
+
+**Note:** On the phone, trips are saved in the browser on that device. Nothing is uploaded. Select **Back up trips** on the Trips screen to keep a copy, and **Restore from file** to bring trips back or to move them to another phone. **Restore from file** also opens trip files from the desktop app's `WayfarerData/trips` folder.
+
+**Caution:** If you clear Safari's or Chrome's website data, or delete the home screen app, the trips on that phone are deleted. Back them up first.
+
+- **Export** makes the PDF, image or text file, then **Share or save to Files** opens the phone's share sheet.
+- Changes save when you select **Save**, and also when you leave the app with unsaved changes.
+- Select **Theme** on the Trips screen to change the look. **Automatic** uses Calm when the phone is dark and Quiet Ink when it is light.
+
+### Publish the phone version
+
+One time: in this repository on GitHub, open **Settings** > **Pages** and set **Source** to **GitHub Actions**. After that, every push to `main` runs the **Web app** workflow, which tests and publishes it.
+
+To build it on your computer: `venv/bin/python web/build.py _site`. Serve the `_site` folder and open it in a browser.
+
+---
+
 ![Wayfarer. Plan the trip. Print the route.](assets/banner.png)
 
 Wayfarer builds trip itineraries on your computer, day by day, and exports them as posters, PDFs or plain text. Works offline. Sends no data.
@@ -136,7 +174,7 @@ If the Trips screen does not load within 8 seconds, the window shows "Wayfarer c
 
 1. Close the window.
 2. Open Wayfarer again.
-3. If the message comes back, [report a problem on GitHub](https://github.com/TariqMK/Wayfarer/issues/new). Give your Wayfarer version and your operating system. You need a free GitHub account.
+3. If the message comes back, [report a problem on GitHub](https://github.com/dansong002/wayfarer_remix/issues/new). Give your Wayfarer version and your operating system. You need a free GitHub account.
 
 **Note:** Wayfarer 1.1.0 opened a blank window on macOS. Download 1.1.1 or later.
 
@@ -192,10 +230,12 @@ From source, the data folder is `WayfarerData` in the project root. Git ignores 
 venv/bin/python -m pytest
 ```
 
+The tests for the phone version's browser code need Node.js. Without it, those tests are skipped.
+
 ### Check the code
 
 ```bash
-venv/bin/python -m ruff check wayfarer tests
+venv/bin/python -m ruff check wayfarer tests web
 ```
 
 ### Build the app
