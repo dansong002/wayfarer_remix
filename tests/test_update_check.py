@@ -78,7 +78,7 @@ def test_https_url_is_kept():
 def test_request_sends_only_the_expected_headers():
     check(opener=answer({"tag_name": "v1.0.0"}), current="1.0.0")
     assert answer.timeout == 10
-    assert answer.request.full_url == "https://api.github.com/repos/TariqMK/Wayfarer/releases/latest"
+    assert answer.request.full_url == "https://api.github.com/repos/dansong002/wayfarer_remix/releases/latest"
     assert set(answer.request.headers) == {"User-agent", "Accept"}
     assert answer.request.headers["User-agent"] == "Wayfarer/1.0.0"
 

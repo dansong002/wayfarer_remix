@@ -2,23 +2,42 @@
 "use strict";
 
 const S = {
-  screen: "home", tab: "editor", trip: null, filename: null, dirty: false, selected: null,
-  collapsed: new Set(), trips: [], version: "", newer: null,
-  exportOpts: { format: "pdf", style: DEFAULT_POSTER, appearance: "light" },
+  screen: "boot", tab: "editor", pane: "route", trip: null, filename: null, dirty: false, selected: null,
+  collapsed: new Set(), trips: [], version: "", newer: null, theme: "auto",
+  exportOpts: { format: "pdf", style: DEFAULT_POSTER, appearance: "ink" },
 };
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-const api = () => window.pywebview.api;
+// The web build for phones (see mode.js) runs on webapi.js. The desktop app runs on Python through pywebview.
+const WEB = Boolean(window.WAYFARER_WEB);
+const api = () => (WEB ? webApi : window.pywebview.api);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const posterStyle = () => (POSTER_STYLES.some(([k]) => k === S.trip.poster) ? S.trip.poster : DEFAULT_POSTER);
 
-// Appearance: follows the system setting -------------------------------------------------
+// Themes: Daniel's Style Suite. Automatic picks Calm on a dark device and Quiet Ink on a light one --------
+const THEMES = [
+  ["calm", "Calm", "Calm + Gem", "Dark and quiet, with one violet accent"],
+  ["ink", "Ink", "Quiet Ink", "Black and white with hairlines. Prints best"],
+  ["gem", "Gem", "Night Gem", "Dark, rounded, a soft colour per trip"],
+  ["signal", "Signal", "Signal", "Warm glow and dot-matrix titles"],
+  ["shelf", "Shelf", "Shelf", "Light studio, each trip a bold cover"],
+];
+const THEME_IDS = THEMES.map(([id]) => id);
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+const themeId = () => (THEME_IDS.includes(S.theme) ? S.theme : darkQuery.matches ? "calm" : "ink");
 function applyTheme() {
-  document.documentElement.dataset.theme = darkQuery.matches ? "dark" : "light";
+  const root = document.documentElement;
+  root.dataset.theme = themeId();
+  const meta = $('meta[name="theme-color"]');
+  if (meta) meta.content = cssVar(root, "--bg");
   if (S.screen !== "boot") render();
 }
 darkQuery.addEventListener("change", applyTheme);
+function setTheme(id) {
+  S.theme = id === "auto" || THEME_IDS.includes(id) ? id : "auto";
+  applyTheme();
+  Promise.resolve(api().set_settings({ theme: S.theme })).catch(() => null);
+}
 
 // Small helpers --------------------------------------------------------------------------
 let toastTimer;
@@ -63,14 +82,18 @@ function placeVersion() {
   const v = $("#version");
   if (brand) v.style.left = `${brand.getBoundingClientRect().right + 4}px`;
 }
+const BRAND = "Wayfarer Remix";
 function header() {
-  if (S.screen === "home") return `<div class="bar"><div class="left"><span class="brand">Wayfarer</span></div></div>`;
-  return `<div class="bar"><div class="left"><button class="btn q" data-action="go-home">← Trips</button><span class="brand">Wayfarer</span></div>
-    <div class="seg" role="group" aria-label="View"><button data-action="tab" data-value="editor" aria-pressed="${S.tab === "editor"}">Editor</button><button data-action="tab" data-value="preview" aria-pressed="${S.tab === "preview"}">Preview</button></div>
-    <div class="right"><span class="state" id="state">${S.dirty ? "Unsaved changes" : (S.filename ? "Saved" : "")}</span><button class="btn" data-action="open-export">Export</button><button class="btn p" data-action="save" title="Ctrl+S">Save</button></div></div>`;
+  if (S.screen === "home") return `<div class="bar home-bar"><div class="left"><span class="brand">${BRAND}</span></div><div class="right"><button class="btn q" data-action="theme">Theme</button></div></div>`;
+  const pressed = (tab, pane) => S.tab === tab && (!pane || S.pane === pane);
+  return `<div class="bar trip"><div class="left"><button class="btn q back" data-action="go-home" aria-label="Back to trips">← Trips</button><span class="brand">${BRAND}</span></div>
+    <div class="seg tabs-d" role="group" aria-label="View"><button data-action="tab" data-value="editor" aria-pressed="${S.tab === "editor"}">Editor</button><button data-action="tab" data-value="preview" aria-pressed="${S.tab === "preview"}">Preview</button></div>
+    <div class="right"><span class="state" id="state">${S.dirty ? "Unsaved changes" : (S.filename ? "Saved" : "")}</span><button class="btn" data-action="open-export">Export</button><button class="btn p" data-action="save" title="Ctrl+S">Save</button></div>
+    <div class="seg tabs-m" role="group" aria-label="View"><button data-action="tab" data-value="trip" aria-pressed="${pressed("editor", "trip")}">Trip</button><button data-action="tab" data-value="route" aria-pressed="${pressed("editor", "route")}">Route</button><button data-action="tab" data-value="preview" aria-pressed="${pressed("preview")}">Preview</button></div></div>`;
 }
 function render() {
   const app = $("#app");
+  if (S.screen === "boot") return;
   if (S.screen === "home") app.innerHTML = header() + homeView();
   else if (S.tab === "editor") {
     const scroller = $("#main-scroll");
@@ -81,8 +104,22 @@ function render() {
   } else {
     app.innerHTML = header() + `<div class="scroll"><div class="preview-wrap"><div class="preview-tools"><span>Poster style</span>${posterStyleSeg("preview-style", posterStyle())}</div><div id="poster-slot"></div></div></div>`;
     $("#poster-slot").innerHTML = renderPoster(S.trip, posterStyle(), document.body);
+    fitPoster();
   }
   placeVersion();
+}
+// Posters have a fixed print width. On a narrow screen, scale the preview down to fit.
+function fitPoster() {
+  const slot = $("#poster-slot");
+  const poster = slot && slot.firstElementChild;
+  if (!poster) return;
+  poster.style.transform = ""; poster.style.margin = ""; slot.style.height = "";
+  const scale = Math.min(1, slot.clientWidth / poster.offsetWidth);
+  if (scale >= 1) return;
+  poster.style.transformOrigin = "top left";
+  poster.style.transform = `scale(${scale})`;
+  poster.style.margin = "0";
+  slot.style.height = `${Math.ceil(poster.offsetHeight * scale)}px`;
 }
 function posterStyleSeg(action, current) {
   return `<div class="seg" role="group" aria-label="Poster style">${POSTER_STYLES.map(([k, label]) => `<button data-action="${action}" data-value="${k}" aria-pressed="${k === current}">${label}</button>`).join("")}</div>`;
@@ -92,12 +129,18 @@ function posterStyleSeg(action, current) {
 function homeView() {
   const root = document.documentElement;
   const colour = cssVar(root, "--t2"), bg = cssVar(root, "--page");
-  const list = S.trips.map(t => t.error
+  // Shelf covers carry dark text on bright colours, so their route strip is drawn dark too.
+  const shelf = themeId() === "shelf";
+  const list = S.trips.map((t, i) => t.error
     ? `<div class="tripcard bad"><div class="open"><h2>${esc(t.filename)}</h2><p>This file can't be read. It may be damaged.</p></div><button class="btn q d del" data-action="delete-trip" data-file="${esc(t.filename)}" data-title="${esc(t.filename)}">Delete</button></div>`
-    : `<div class="tripcard"><button class="open" data-action="open-trip" data-file="${esc(t.filename)}"><h2>${esc(t.title)}</h2>${t.subtitle ? `<p>${esc(t.subtitle)}</p>` : ""}${routeStrip(t.modes.slice(0, 24), colour, bg)}<small>${esc([tripRangeFromSummary(t), `${t.days} day${t.days === 1 ? "" : "s"}`].filter(Boolean).join(" · "))}</small></button><button class="btn q d del" data-action="delete-trip" data-file="${esc(t.filename)}" data-title="${esc(t.title)}">Delete</button></div>`
+    : `<div class="tripcard" style="--cover:var(--area-${(i % 5) + 1})"><button class="open" data-action="open-trip" data-file="${esc(t.filename)}"><h2>${esc(t.title)}</h2>${t.subtitle ? `<p>${esc(t.subtitle)}</p>` : ""}${routeStrip(t.modes.slice(0, 24), shelf ? "#111111" : colour, shelf ? cssVar(root, `--area-${(i % 5) + 1}`) : bg)}<small>${esc([tripRangeFromSummary(t), `${t.days} day${t.days === 1 ? "" : "s"}`].filter(Boolean).join(" · "))}</small></button><button class="btn q d del" data-action="delete-trip" data-file="${esc(t.filename)}" data-title="${esc(t.title)}">Delete</button></div>`
   ).join("");
-  return `<div class="scroll"><div class="home">${S.dataProblem ? `<p class="notice" role="alert">${esc(S.dataProblem)}</p>` : ""}<div class="home-top"><h1>Trips</h1><button class="btn p" data-action="new-trip">New trip</button></div>
-    ${list || (S.loaded ? `<div class="empty">${routeStrip(["plane", "train", "walk", "boat", "car"], colour, bg)}<p>Create a trip to start your first route</p></div>` : "")}</div></div>`;
+  const count = S.trips.length ? `<span class="label home-count">${S.trips.length} trip${S.trips.length === 1 ? "" : "s"}</span>` : "";
+  const device = WEB ? `<div class="device"><p>Trips are saved in this browser, on this device only. Back them up before you clear the browser's data or change phones.</p>
+    <div class="acts"><button class="btn" data-action="backup">Back up trips</button><button class="btn" data-action="restore">Restore from file</button></div>
+    <input type="file" id="restore-file" accept=".json,application/json" multiple hidden></div>` : "";
+  return `<div class="scroll"><div class="home">${S.dataProblem ? `<p class="notice" role="alert">${esc(S.dataProblem)}</p>` : ""}<div class="home-top"><div>${count}<h1>Trips</h1></div><button class="btn p" data-action="new-trip">New trip</button></div>
+    ${list || (S.loaded ? `<div class="empty">${routeStrip(["plane", "train", "walk", "boat", "car"], colour, bg)}<p>Create a trip to start your first route</p></div>` : "")}${device}</div></div>`;
 }
 function tripRangeFromSummary(t) {
   if (!t.first) return "";
@@ -138,6 +181,7 @@ window.wayfarerRequestClose = async () => {
 };
 function openEditor(trip, filename) {
   S.trip = normaliseTrip(trip); S.filename = filename; S.screen = "trip"; S.tab = "editor"; S.selected = null;
+  S.pane = S.trip.days.length ? "route" : "trip";
   S.collapsed.clear();
   setDirty(false);
   render();
@@ -159,10 +203,10 @@ function editorView() {
     <label class="f"><span>Trip title</span><input class="in" data-trip="title" value="${esc(t.title)}" placeholder="Portugal coast"></label>
     <label class="f"><span>Subtitle</span><input class="in" data-trip="subtitle" value="${esc(t.subtitle)}" placeholder="Lisbon to Porto"></label>
     <label class="f" style="margin-bottom:0"><span>Trip notes</span><textarea class="in" rows="3" data-trip="notes" placeholder="Reminders and contacts">${esc(t.notes)}</textarea></label>
-    <h3>Days <i id="day-count">${t.days.length}</i></h3><div id="day-index">${dayIndex()}</div>
+    <h3 class="label">Days <i id="day-count">${t.days.length}</i></h3><div id="day-index">${dayIndex()}</div>
     <button class="btn" style="width:100%;margin-top:8px" data-action="add-day">Add day</button></aside>`;
   const days = t.days.map(dayView).join("");
-  return `<div class="body">${side}<div class="scroll" id="main-scroll"><div class="d1main">${days || `<div class="emptyday"><p>Add the first day to start the route</p></div>`}
+  return `<div class="body" data-pane="${S.pane}">${side}<div class="scroll" id="main-scroll"><div class="d1main">${days || `<div class="emptyday"><p>Add the first day to start the route</p></div>`}
     ${t.days.length ? `<button class="btn" style="margin:16px 0 0 40px" data-action="add-day">Add day</button>` : `<div style="text-align:center"><button class="btn p" data-action="add-day">Add day</button></div>`}</div></div></div>`;
 }
 function dayIndex() {
@@ -233,6 +277,7 @@ function addDay() {
   const last = S.trip.days[S.trip.days.length - 1];
   const day = { id: uid(), date: last ? addDays(last.date, 1) : "", label: "", slots: { morning: [], afternoon: [], evening: [] } };
   S.trip.days.push(day);
+  S.pane = "route";
   setDirty(); render();
   const el = document.getElementById(`day-${day.id}`);
   if (el) { el.scrollIntoView({ block: "center" }); $("[data-day-field=label]", el).focus(); }
@@ -360,8 +405,8 @@ function renderExportDialog() {
   const isText = o.format === "text";
   dialog(`${thumbHtml()}<div><h2>Export trip</h2>
     ${seg("Format", "format", [["pdf", "PDF"], ["image", "Image"], ["text", "Text"]])}
-    ${isText ? "" : seg("Poster style", "style", POSTER_STYLES) + seg("Appearance", "appearance", [["light", "Light"], ["dark", "Dark"]])}
-    <p class="hint">${isText ? "Saves a text file. You choose where in the next step." : o.format === "pdf" ? "A4 pages. Long trips continue on more pages. You choose where to save in the next step." : "One long PNG image. You choose where to save in the next step."}</p>
+    ${isText ? "" : seg("Poster style", "style", POSTER_STYLES) + seg("Theme", "appearance", THEMES.map(([id, short]) => [id, short]))}
+    <p class="hint">${isText ? "A text file." : o.format === "pdf" ? "A4 pages. Long trips continue on more pages." : "One long PNG image."}${isText ? "" : " Ink and Shelf print best: dark themes use a lot of ink."} ${WEB ? "You can share or save it in the next step." : "You choose where to save in the next step."}</p>
     <div class="acts">${isText ? '<button class="btn" data-action="copy-text">Copy</button>' : ""}<button class="btn" data-action="close-dialog">Cancel</button><button class="btn p" data-action="run-export" data-default>Export</button></div></div>`, "export");
   const inner = $("#thumb-inner");
   if (inner) {
@@ -383,12 +428,42 @@ async function runExport() {
     else if (o.format === "image") r = await api().export_image(S.trip, await posterToPng(S.trip, o.style, o.appearance));
     else r = await api().export_pdf(S.trip, await posterToPdfPages(S.trip, o.style, o.appearance));
     if (r.cancelled) { btn.disabled = false; btn.textContent = "Export"; return; }
+    if (r.ready) { readyDialog(r, "Your export is ready"); return; }
     closeDialog();
     toast(r.ok ? `Saved to ${r.path}` : r.error);
   } catch (err) {
     closeDialog();
     toast(`The export failed: ${err.message || err}`);
   }
+}
+// Web build: the file is made, and one more tap opens the share sheet or saves it.
+function readyDialog(r, title) {
+  dialog(`<h2>${esc(title)}</h2><p>${esc(r.name)}</p><div class="ready">
+    ${r.canShare ? `<button class="btn p" data-action="deliver" data-value="share" data-default>Share or save to Files</button>` : ""}
+    <button class="btn ${r.canShare ? "" : "p"}" data-action="deliver" data-value="save" ${r.canShare ? "" : "data-default"}>Download</button>
+    <button class="btn q" data-action="close-dialog">Cancel</button></div>`);
+}
+async function deliver(el) {
+  const r = await api().deliver(el.dataset.value);
+  if (r.cancelled) return;
+  closeDialog();
+  toast(r.ok ? r.message : r.error);
+}
+function renderThemeDialog() {
+  const row = (id, name, desc) => `<button class="theme-row" data-action="set-theme" data-value="${id}" aria-pressed="${S.theme === id}"><span class="swatch" data-theme="${id === "auto" ? themeId() : id}"><i></i></span><span><b>${esc(name)}</b><small>${esc(desc)}</small></span></button>`;
+  dialog(`<h2>Theme</h2><p>Posters can use any theme when you export.</p><div class="themes">
+    ${row("auto", "Automatic", "Calm when this device is dark, Quiet Ink when it is light")}
+    ${THEMES.map(([id, , name, desc]) => row(id, name, desc)).join("")}</div>
+    <div class="acts"><button class="btn" data-action="close-dialog" data-default>Done</button></div>`);
+}
+async function restoreFiles(files) {
+  let added = 0, same = 0, failed = 0;
+  for (const file of files) {
+    const r = api().restore(await file.text());
+    if (r.ok) { added += r.added; same += r.same; } else { failed += 1; toast(r.error); }
+  }
+  if (!failed || added) toast(added ? `${added} trip${added === 1 ? "" : "s"} restored` : same ? "These trips are already on this device" : "No trips found in this file");
+  loadTrips();
 }
 async function copyText() {
   const text = await api().build_text(S.trip);
@@ -447,10 +522,23 @@ const ACTIONS = {
   },
   "confirm-answer": el => { const resolve = pendingConfirm; pendingConfirm = null; closeDialog(); if (resolve) resolve(el.dataset.value); },
   "close-dialog": closeDialog,
-  tab: el => { S.tab = el.dataset.value; render(); },
+  tab: el => {
+    const v = el.dataset.value;
+    if (v === "trip" || v === "route") { S.tab = "editor"; S.pane = v; } else S.tab = v;
+    render();
+  },
   save: saveTrip,
   "add-day": addDay,
-  jump: el => { const t = document.getElementById(`day-${el.dataset.day}`); if (t) t.scrollIntoView({ block: "start" }); },
+  jump: el => {
+    if (S.pane !== "route") { S.pane = "route"; render(); }
+    const t = document.getElementById(`day-${el.dataset.day}`);
+    if (t) t.scrollIntoView({ block: "start" });
+  },
+  theme: renderThemeDialog,
+  "set-theme": el => { setTheme(el.dataset.value); renderThemeDialog(); },
+  deliver,
+  backup: () => readyDialog(api().backup(), "Your backup is ready"),
+  restore: () => $("#restore-file").click(),
   "day-up": el => moveDay(el.dataset.day, -1),
   "day-down": el => moveDay(el.dataset.day, 1),
   collapse: el => { const id = el.dataset.day; if (S.collapsed.has(id)) S.collapsed.delete(id); else S.collapsed.add(id); render(); },
@@ -491,9 +579,8 @@ const ACTIONS = {
   },
   "preview-style": el => { S.trip.poster = el.dataset.value; setDirty(); render(); },
   "open-export": () => {
-    const dark = document.documentElement.dataset.theme === "dark";
     S.exportOpts.style = posterStyle();
-    S.exportOpts.appearance = dark ? "dark" : "light";
+    S.exportOpts.appearance = themeId();
     renderExportDialog();
   },
   "export-opt": el => { S.exportOpts[el.dataset.opt] = el.dataset.value; renderExportDialog(); },
@@ -527,7 +614,10 @@ document.addEventListener("keydown", e => {
     if (cancel) cancel.click();
   } else if (S.selected) { S.selected = null; render(); }
 });
-window.addEventListener("resize", placeVersion);
+document.addEventListener("change", e => {
+  if (e.target.id === "restore-file" && e.target.files.length) { restoreFiles([...e.target.files]); e.target.value = ""; }
+});
+window.addEventListener("resize", () => { placeVersion(); if (S.screen === "trip" && S.tab === "preview") fitPoster(); });
 
 // Start ----------------------------------------------------------------------------------
 // If the link to Python never arrives or start-up fails, show a message instead of a blank window.
@@ -535,14 +625,27 @@ const START_TIMEOUT_MS = 8000;
 let started = false;
 function showStartFailure() {
   if (started) return;
-  document.documentElement.dataset.theme = darkQuery.matches ? "dark" : "light";
-  $("#app").innerHTML = `<div class="scroll"><div class="home"><p class="notice" role="alert">Wayfarer could not start. Close the window and open Wayfarer again. If this message comes back, report it at github.com/TariqMK/Wayfarer/issues.</p></div></div>`;
+  document.documentElement.dataset.theme = themeId();
+  $("#app").innerHTML = `<div class="scroll"><div class="home"><p class="notice" role="alert">Wayfarer could not start. ${WEB ? "Close it and open it again." : "Close the window and open Wayfarer again."} If this message comes back, report it at github.com/dansong002/wayfarer_remix/issues.</p></div></div>`;
+}
+// Web build only: work offline, ask the browser to keep the trips, and protect unsaved changes.
+function startWeb() {
+  $("#version").hidden = true;
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("sw.js").catch(() => null);
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => null);
+  window.addEventListener("beforeunload", e => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
+  // A phone can close an app in the background without warning, so save when Wayfarer leaves the screen.
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && S.dirty && S.trip) saveTrip(); });
 }
 async function boot() {
   try {
+    if (WEB) startWeb();
+    const settings = (await api().get_settings()) || {};
+    S.theme = settings.theme || "auto";
     S.version = await api().get_version();
     S.dataProblem = await api().get_data_problem();
     paintVersion();
+    S.screen = "home";
     applyTheme();
     await loadTrips();
     started = true;
@@ -553,5 +656,5 @@ async function boot() {
   }
 }
 setTimeout(showStartFailure, START_TIMEOUT_MS);
-if (window.pywebview && window.pywebview.api) boot();
+if (WEB || (window.pywebview && window.pywebview.api)) boot();
 else window.addEventListener("pywebviewready", boot, { once: true });
